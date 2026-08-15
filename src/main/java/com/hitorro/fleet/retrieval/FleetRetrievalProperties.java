@@ -65,6 +65,18 @@ public class FleetRetrievalProperties {
                 : Paths.get(standaloneKvHome);
     }
 
+    /**
+     * Shared-mode secondary-instance directory for RocksDB
+     * {@code openAsSecondary}. Each secondary needs its own writable
+     * dir for the LOG follower; keep them under
+     * {@code ~/.hitorro/fleet-retrieval/kv-secondary/} so they don't
+     * mingle with primary data.
+     */
+    public Path kvSecondaryRoot() {
+        return Paths.get(System.getProperty("user.home"),
+                ".hitorro", "fleet-retrieval", "kv-secondary");
+    }
+
     public Mode getMode() { return mode; }
     public void setMode(Mode mode) { this.mode = mode; }
     public String getDefaultLanguage() { return defaultLanguage; }

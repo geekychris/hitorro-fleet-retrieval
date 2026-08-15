@@ -21,13 +21,18 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.stream.Stream;
 
 /**
- * Per-index RocksDB store manager. Maps a name →
- * {@code ${kvRoot}/<name>/} directory (same layout the pipeline kvstore
- * sink writes into).
+ * Per-index RocksDB store manager. Maps {@code name → ${kvRoot}/<name>/}.
  *
- * <p>Stores open lazily on first {@link #openOrCreate(String)}. Global
- * enable/disable via {@code hitorro.fleet.retrieval.kv-enabled} — if
- * off, {@link #get(String)} always returns {@code null}.</p>
+ * <ul>
+ *   <li>{@code mode=standalone} — opens with the writer-owning
+ *       {@link RocksDBStore} so REST ingest can put values.</li>
+ *   <li>{@code mode=shared}     — opens as a RocksDB <b>secondary</b>
+ *       via {@link ReadOnlyKvStore} so pipeline writers keep exclusive
+ *       write access and this service just follows.</li>
+ * </ul>
+ *
+ * <p>Stores open lazily on first {@link #openOrCreate(String)}. If
+ * {@code kv-enabled=false} the whole service is a no-op.</p>
  */
 @Service
 public class FleetKvService {
@@ -35,8 +40,9 @@ public class FleetKvService {
     private static final Logger log = LoggerFactory.getLogger(FleetKvService.class);
 
     private final FleetRetrievalProperties props;
-    private final Map<String, TypedKVStore<JsonNode>> stores = new ConcurrentHashMap<>();
-    private final Map<String, RocksDBStore> rawStores = new ConcurrentHashMap<>();
+    private final Map<String, TypedKVStore<JsonNode>> stores    = new ConcurrentHashMap<>();
+    private final Map<String, RocksDBStore>           rawStores = new ConcurrentHashMap<>();
+    private final Map<String, ReadOnlyKvStore>        secondary = new ConcurrentHashMap<>();
 
     public FleetKvService(FleetRetrievalProperties props) {
         this.props = props;
@@ -66,6 +72,16 @@ public class FleetKvService {
         if (existing != null) return existing;
         try {
             Path dir = props.kvRoot().resolve(name);
+            if (props.getMode() == FleetRetrievalProperties.Mode.shared) {
+                // Only try to attach if the primary already exists on disk.
+                if (!Files.isDirectory(dir)) return null;
+                Path secDir = props.kvSecondaryRoot().resolve(name);
+                ReadOnlyKvStore sec = new ReadOnlyKvStore(dir, secDir);
+                TypedKVStore<JsonNode> typed = new TypedKVStore<>(sec, JsonNode.class);
+                secondary.put(name, sec);
+                stores.put(name, typed);
+                return typed;
+            }
             Files.createDirectories(dir);
             DatabaseConfig cfg = DatabaseConfig.builder(dir.toString()).createIfMissing(true).build();
             RocksDBStore raw = new RocksDBStore(cfg);
@@ -82,7 +98,10 @@ public class FleetKvService {
     /** Returns the typed store or null if disabled / not present. */
     public TypedKVStore<JsonNode> get(String name) {
         if (!props.isKvEnabled()) return null;
-        return stores.get(name);
+        TypedKVStore<JsonNode> existing = stores.get(name);
+        if (existing != null) return existing;
+        // Late-arriving KV — pipeline may have created it after our boot scan.
+        return openOrCreate(name);
     }
 
     public Set<String> listStores() { return stores.keySet(); }
@@ -92,7 +111,11 @@ public class FleetKvService {
         for (var s : rawStores.values()) {
             try { s.close(); } catch (Exception e) { log.debug("KV close", e); }
         }
+        for (var s : secondary.values()) {
+            try { s.close(); } catch (Exception e) { log.debug("KV secondary close", e); }
+        }
         rawStores.clear();
+        secondary.clear();
         stores.clear();
     }
 }

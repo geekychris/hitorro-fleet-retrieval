@@ -273,9 +273,22 @@ public class RetrievalController {
     public ResponseEntity<Map<String, Object>> fields(@PathVariable("indexName") String indexName) {
         Map<String, Object> out = new LinkedHashMap<>();
         try {
-            var handle = indexes.indexManager().getIndex(indexName);
-            if (handle == null) return ResponseEntity.notFound().build();
-            try (var reader = org.apache.lucene.index.DirectoryReader.open(handle.getWriter().getIndexWriter())) {
+            if (!indexes.hasIndex(indexName)) return ResponseEntity.notFound().build();
+            org.apache.lucene.index.DirectoryReader reader;
+            boolean weOpenedIt;
+            if (indexes.isReadOnly()) {
+                // Shared mode — open a fresh DirectoryReader on demand, no
+                // write.lock. Snapshot introspection only.
+                reader = org.apache.lucene.index.DirectoryReader.open(
+                        org.apache.lucene.store.FSDirectory.open(indexes.pathOf(indexName)));
+                weOpenedIt = true;
+            } else {
+                var handle = indexes.indexManager().getIndex(indexName);
+                if (handle == null) return ResponseEntity.notFound().build();
+                reader = org.apache.lucene.index.DirectoryReader.open(handle.getWriter().getIndexWriter());
+                weOpenedIt = true;
+            }
+            try {
                 var fis = org.apache.lucene.index.FieldInfos.getMergedFieldInfos(reader);
                 List<Map<String, Object>> rows = new ArrayList<>();
                 for (var fi : fis) {
@@ -284,7 +297,6 @@ public class RetrievalController {
                     row.put("indexed", fi.getIndexOptions() != org.apache.lucene.index.IndexOptions.NONE);
                     row.put("docValuesType", fi.getDocValuesType().name());
                     row.put("pointDimensionCount", fi.getPointDimensionCount());
-                    // Grab up to 5 sample terms.
                     List<String> samples = new ArrayList<>();
                     try {
                         var terms = org.apache.lucene.index.MultiTerms.getTerms(reader, fi.name);
@@ -300,6 +312,8 @@ public class RetrievalController {
                 out.put("indexName", indexName);
                 out.put("numDocs", reader.numDocs());
                 out.put("fields", rows);
+            } finally {
+                if (weOpenedIt) try { reader.close(); } catch (Exception ignore) {}
             }
         } catch (Exception e) {
             out.put("error", e.getMessage());
@@ -321,7 +335,7 @@ public class RetrievalController {
         try {
             List<String> facetDims = (facets != null && !facets.isBlank())
                     ? List.of(facets.split(",")) : null;
-            SearchResult sr = indexes.indexManager().search(index, q, offset, limit, facetDims, lang);
+            SearchResult sr = coordinator.executeRaw(index, q, offset, limit, facetDims, lang);
             result.put("documents", sr.getDocuments().stream().map(JVS::getJsonNode).toList());
             result.put("totalHits", sr.getTotalHits());
             result.put("searchTimeMs", sr.getSearchTimeMs());

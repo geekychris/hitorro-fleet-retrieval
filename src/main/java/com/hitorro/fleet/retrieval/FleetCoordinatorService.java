@@ -29,13 +29,16 @@ import java.util.List;
 /**
  * Front-door to the full retrieval coordination runtime. Builds a
  * {@link RetrievalService} per call (cheap — the heavy state lives in
- * {@link FleetIndexService#indexManager()} and {@link FleetKvService})
- * with the right search provider + document store + optional
- * summarization stage for the request.
+ * {@link FleetIndexService} and {@link FleetKvService}) with the right
+ * search provider + document store + optional summarization stage for
+ * the request.
  *
- * <p>Single-index calls go through {@link RetrievalService} which wraps
- * {@code RetrievalPipelineBuilder}. Multi-index calls fan out through a
- * {@link CompositeSearchProvider} with a caller-selected merger.</p>
+ * <p>In shared mode the search provider is a {@link ReadOnlySearchProvider}
+ * backed by {@link ReadOnlyIndexService} so the on-disk indexes have no
+ * {@code write.lock} contention with the pipeline writers. In standalone
+ * mode the coordinator wraps {@link LuceneSearchProvider} over the local
+ * {@code IndexManager} (which owns both the writer and searcher because
+ * REST ingest lands here too).</p>
  */
 @Service
 public class FleetCoordinatorService {
@@ -59,7 +62,7 @@ public class FleetCoordinatorService {
         if (!indexes.hasIndex(indexName)) {
             throw new IllegalArgumentException("Index not found: " + indexName);
         }
-        SearchProvider search = new LuceneSearchProvider(indexes.indexManager());
+        SearchProvider search = providerFor(indexName);
         TypedKVStore<JsonNode> store = kv.openOrCreate(indexName);
         DocumentStore docStore = store != null ? new LocalKVDocumentStore(store) : null;
 
@@ -83,19 +86,52 @@ public class FleetCoordinatorService {
         List<SearchProvider> providers = new ArrayList<>();
         for (String name : indexNames) {
             if (!indexes.hasIndex(name)) continue;
-            final String captured = name;
-            providers.add(new LuceneSearchProvider(indexes.indexManager()) {
-                @Override
-                public SearchResult search(String ig, String q, int o, int l,
-                                           List<String> f, String ln) throws Exception {
-                    return super.search(captured, q, o, l, f, ln);
-                }
-                @Override public String getName() { return "lucene:" + captured; }
-            });
+            providers.add(providerFor(name));
         }
         if (providers.isEmpty()) throw new IllegalArgumentException("No valid indexes: " + indexNames);
         CompositeSearchProvider composite = new CompositeSearchProvider(providers, selectMerger(mergerName));
         return composite.search("multi", query, offset, limit, facets, effectiveLang(lang));
+    }
+
+    /**
+     * Build a SearchProvider that always targets the given index name.
+     * Shared mode → read-only DirectoryReader-backed provider (no
+     * {@code write.lock}). Standalone mode → LuceneSearchProvider over
+     * the writer-owning IndexManager.
+     */
+    /**
+     * Raw single-index search bypassing the retrieval pipeline — used by
+     * the wire-transport {@code /api/retrieval/search} endpoint that
+     * {@code RemoteSearchProvider} clients call.
+     */
+    public SearchResult executeRaw(String indexName, String query, int offset, int limit,
+                                   List<String> facetDims, String lang) throws Exception {
+        return providerFor(indexName).search(indexName, query, offset, limit, facetDims, effectiveLang(lang));
+    }
+
+    private SearchProvider providerFor(String indexName) {
+        final String captured = indexName;
+        if (indexes.isReadOnly()) {
+            ReadOnlySearchProvider ro = new ReadOnlySearchProvider(indexes.readOnly(),
+                    indexes::pathOf);
+            return new SearchProvider() {
+                @Override
+                public SearchResult search(String ig, String q, int o, int l,
+                                           List<String> f, String ln) throws Exception {
+                    return ro.search(captured, q, o, l, f, ln);
+                }
+                @Override public String getName()      { return "read-only-lucene:" + captured; }
+                @Override public boolean isAvailable() { return true; }
+            };
+        }
+        return new LuceneSearchProvider(indexes.indexManager()) {
+            @Override
+            public SearchResult search(String ig, String q, int o, int l,
+                                       List<String> f, String ln) throws Exception {
+                return super.search(captured, q, o, l, f, ln);
+            }
+            @Override public String getName() { return "lucene:" + captured; }
+        };
     }
 
     private Type resolveType(String indexName) {
