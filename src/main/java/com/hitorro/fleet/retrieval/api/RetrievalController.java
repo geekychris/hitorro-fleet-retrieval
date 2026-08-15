@@ -373,17 +373,25 @@ public class RetrievalController {
             if (sr.hasFacets()) result.put("facets", facetsToMap(sr));
         }
 
+        var ctx = rr.getContext();
+
+        // Derive stagesUsed from what the stages actually reported to the
+        // context where possible, NOT from what the query asked for. Two
+        // stages (DocumentRetriever, SummarizationRetriever) set context
+        // attributes when they run, so we can flag them accurately. Fixup
+        // and Pagination don't yet have dedicated attrs — asked-for is the
+        // best signal we have, tagged with "?" so users know it may not
+        // have participated (e.g. type tags that matched nothing).
         List<String> stages = new ArrayList<>();
         stages.add("IndexRetriever");
-        if (queryNode != null && queryNode.has("fetch")) stages.add("DocumentRetriever");
-        if (queryNode != null && queryNode.has("fixup")) stages.add("FixupRetriever");
-        if (queryNode != null && queryNode.has("page")) stages.add("PaginationRetriever");
+        if (ctx.hasAttribute(ContextAttributes.DOCUMENT_STORE_TYPE)) stages.add("DocumentRetriever");
+        if (queryNode != null && queryNode.has("fixup")) stages.add("FixupRetriever?");
+        if (queryNode != null && queryNode.has("page"))  stages.add("PaginationRetriever?");
         if (sr != null && sr.hasFacets()) stages.add("FacetRetriever");
-        if (queryNode != null && queryNode.has("summarize")) stages.add("SummarizationRetriever");
+        if (ctx.hasAttribute(ContextAttributes.AI_SUMMARY)) stages.add("SummarizationRetriever");
         result.put("stagesUsed", stages);
 
         Map<String, Object> attrs = new LinkedHashMap<>();
-        var ctx = rr.getContext();
         if (ctx.hasAttribute(ContextAttributes.SEARCH_PROVIDERS))
             attrs.put("searchProvider", ctx.getAttribute(ContextAttributes.SEARCH_PROVIDERS, String.class));
         if (ctx.hasAttribute(ContextAttributes.TOTAL_HITS))
