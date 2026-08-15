@@ -186,10 +186,28 @@ public class FleetIndexService {
     public Map<String, Object> describe(String indexName) {
         Map<String, Object> m = new LinkedHashMap<>();
         m.put("name", indexName);
-        m.put("path", pathOf(indexName).toString());
+        Path dir = pathOf(indexName);
+        m.put("path", dir.toString());
         m.put("typeName", typeNames.get(indexName));
         m.put("open", discovered.contains(indexName));
         m.put("readOnly", readOnly != null);
+        // Cheap freshness signals: mtime of newest segment file + numDocs
+        // via a short-lived DirectoryReader. These let the UI show live
+        // activity without the user having to open the index.
+        try {
+            long newest = 0;
+            try (Stream<Path> files = Files.list(dir)) {
+                for (Path p : (Iterable<Path>) files::iterator) {
+                    long ts = Files.getLastModifiedTime(p).toMillis();
+                    if (ts > newest) newest = ts;
+                }
+            }
+            if (newest > 0) m.put("lastModifiedMs", newest);
+        } catch (IOException ignore) {}
+        try (var dirRef = org.apache.lucene.store.FSDirectory.open(dir);
+             var reader = org.apache.lucene.index.DirectoryReader.open(dirRef)) {
+            m.put("docCount", reader.numDocs());
+        } catch (Exception ignore) {}
         return m;
     }
 
