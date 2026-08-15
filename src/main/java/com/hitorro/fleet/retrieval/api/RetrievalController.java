@@ -239,6 +239,74 @@ public class RetrievalController {
         return ResponseEntity.notFound().build();
     }
 
+    /** Report the type-system config resolution so we can spot missing HT_BIN etc. */
+    @GetMapping("/env-check")
+    public ResponseEntity<Map<String, Object>> envCheck() {
+        Map<String, Object> out = new LinkedHashMap<>();
+        out.put("systemHtBin", System.getProperty("HT_BIN"));
+        out.put("systemHtBinLower", System.getProperty("ht.bin"));
+        out.put("envHtBin", System.getenv("HT_BIN"));
+        out.put("userDir", System.getProperty("user.dir"));
+        try {
+            var lfts = com.hitorro.index.config.LuceneFieldTypes.getInstance();
+            java.lang.reflect.Field mf = com.hitorro.index.config.LuceneFieldTypes.class.getDeclaredField("map");
+            mf.setAccessible(true);
+            @SuppressWarnings("unchecked")
+            Map<String, ?> m = (Map<String, ?>) mf.get(lfts);
+            out.put("luceneFieldTypeCount", m.size());
+            out.put("luceneFieldTypeNames", m.keySet());
+        } catch (Exception e) {
+            out.put("luceneFieldTypesError", e.getMessage());
+        }
+        return ResponseEntity.ok(out);
+    }
+
+    // ─── Debug — physical Lucene field inventory ────────────────────
+
+    /**
+     * Enumerate every Lucene FieldInfo in the named index — physical
+     * name + term count + sample. Lets a caller figure out how the
+     * type-aware writer projected each JVS field, without cracking the
+     * on-disk segments by hand.
+     */
+    @GetMapping("/fields/{indexName}")
+    public ResponseEntity<Map<String, Object>> fields(@PathVariable("indexName") String indexName) {
+        Map<String, Object> out = new LinkedHashMap<>();
+        try {
+            var handle = indexes.indexManager().getIndex(indexName);
+            if (handle == null) return ResponseEntity.notFound().build();
+            try (var reader = org.apache.lucene.index.DirectoryReader.open(handle.getWriter().getIndexWriter())) {
+                var fis = org.apache.lucene.index.FieldInfos.getMergedFieldInfos(reader);
+                List<Map<String, Object>> rows = new ArrayList<>();
+                for (var fi : fis) {
+                    Map<String, Object> row = new LinkedHashMap<>();
+                    row.put("name", fi.name);
+                    row.put("indexed", fi.getIndexOptions() != org.apache.lucene.index.IndexOptions.NONE);
+                    row.put("docValuesType", fi.getDocValuesType().name());
+                    row.put("pointDimensionCount", fi.getPointDimensionCount());
+                    // Grab up to 5 sample terms.
+                    List<String> samples = new ArrayList<>();
+                    try {
+                        var terms = org.apache.lucene.index.MultiTerms.getTerms(reader, fi.name);
+                        if (terms != null) {
+                            var te = terms.iterator();
+                            org.apache.lucene.util.BytesRef t;
+                            while ((t = te.next()) != null && samples.size() < 5) samples.add(t.utf8ToString());
+                        }
+                    } catch (Exception ignore) {}
+                    row.put("sampleTerms", samples);
+                    rows.add(row);
+                }
+                out.put("indexName", indexName);
+                out.put("numDocs", reader.numDocs());
+                out.put("fields", rows);
+            }
+        } catch (Exception e) {
+            out.put("error", e.getMessage());
+        }
+        return ResponseEntity.ok(out);
+    }
+
     // ─── Wire-transport support for RemoteSearchProvider clients ────
 
     @GetMapping("/search")
