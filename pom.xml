@@ -196,6 +196,35 @@
             </exclusions>
         </dependency>
 
+        <!-- hitorro-basefile.CompressionType has a <clinit> that touches
+             org.apache.hadoop.io.compress.CompressionInputStream — even paths
+             that never compress anything fail to load if hadoop is missing.
+             Pull hadoop-common back in but leave hadoop-mapreduce / hdfs / etc.
+             excluded. Adds ~15MB to the fat jar, not the full ~400MB tail. -->
+        <dependency>
+            <groupId>org.apache.hadoop</groupId>
+            <artifactId>hadoop-common</artifactId>
+            <version>3.4.1</version>
+            <exclusions>
+                <exclusion><groupId>org.apache.zookeeper</groupId><artifactId>*</artifactId></exclusion>
+                <exclusion><groupId>org.apache.curator</groupId><artifactId>*</artifactId></exclusion>
+                <exclusion><groupId>org.eclipse.jetty</groupId><artifactId>*</artifactId></exclusion>
+                <exclusion><groupId>org.eclipse.jetty.toolchain</groupId><artifactId>*</artifactId></exclusion>
+                <exclusion><groupId>org.bouncycastle</groupId><artifactId>*</artifactId></exclusion>
+                <exclusion><groupId>org.wildfly.openssl</groupId><artifactId>*</artifactId></exclusion>
+                <exclusion><groupId>ch.qos.reload4j</groupId><artifactId>reload4j</artifactId></exclusion>
+                <exclusion><groupId>org.slf4j</groupId><artifactId>slf4j-reload4j</artifactId></exclusion>
+                <exclusion><groupId>commons-logging</groupId><artifactId>commons-logging</artifactId></exclusion>
+                <exclusion><groupId>com.google.re2j</groupId><artifactId>*</artifactId></exclusion>
+                <exclusion><groupId>com.sun.jersey</groupId><artifactId>*</artifactId></exclusion>
+                <exclusion><groupId>javax.servlet.jsp</groupId><artifactId>*</artifactId></exclusion>
+                <exclusion><groupId>org.apache.kerby</groupId><artifactId>*</artifactId></exclusion>
+                <exclusion><groupId>dnsjava</groupId><artifactId>*</artifactId></exclusion>
+                <exclusion><groupId>com.jcraft</groupId><artifactId>*</artifactId></exclusion>
+                <exclusion><groupId>com.google.protobuf</groupId><artifactId>*</artifactId></exclusion>
+            </exclusions>
+        </dependency>
+
         <dependency>
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-web</artifactId>
