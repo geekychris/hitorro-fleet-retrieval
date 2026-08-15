@@ -1,0 +1,8 @@
+target/
+logs/
+pids/
+.DS_Store
+certs/
+*.log
+.idea/
+*.iml

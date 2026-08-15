@@ -1,0 +1,40 @@
+# hitorro-fleet-retrieval — default configuration.
+# Override at runtime via env vars or --hitorro.fleet.retrieval.<name>=...
+server:
+  port: 8090
+  servlet:
+    context-path: /
+
+spring:
+  application:
+    name: hitorro-fleet-retrieval
+  jackson:
+    default-property-inclusion: non_null
+
+hitorro:
+  fleet:
+    retrieval:
+      # standalone: service owns its own Lucene + KV, ingests via REST.
+      # shared:     reads pipeline-produced indexes from ${pipelinesHome}/lucene
+      #             and KV from ${pipelinesHome}/kv (mesh writes, retrieval reads).
+      mode: standalone
+      default-language: en
+      # Only used when mode=shared. Default matches the mesh pipelines' layout.
+      # pipelines-home: ${HITORRO_PIPELINES_HOME:${user.home}/.hitorro/pipelines}
+      # Only used when mode=standalone.
+      # standalone-lucene-home: ${user.home}/.hitorro/fleet-retrieval/lucene
+      # standalone-kv-home:     ${user.home}/.hitorro/fleet-retrieval/kv
+      kv-enabled: true
+      allow-ingest: true
+
+logging:
+  level:
+    com.hitorro.fleet: INFO
+    com.hitorro.retrieval: INFO
+    com.hitorro.index: INFO
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health, info, prometheus, metrics
