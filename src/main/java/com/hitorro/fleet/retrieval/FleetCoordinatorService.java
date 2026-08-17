@@ -3,6 +3,10 @@
  */
 package com.hitorro.fleet.retrieval;
 
+import com.hitorro.retrieval.search.ReadOnlySearchProvider;
+
+import com.hitorro.index.readonly.ReadOnlyIndexService;
+
 import com.fasterxml.jackson.databind.JsonNode;
 import com.hitorro.index.search.SearchResult;
 import com.hitorro.jsontypesystem.JVS;

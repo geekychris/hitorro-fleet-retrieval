@@ -3,6 +3,8 @@
  */
 package com.hitorro.fleet.retrieval;
 
+import com.hitorro.index.readonly.ReadOnlyIndexService;
+
 import com.hitorro.index.IndexManager;
 import com.hitorro.index.config.IndexConfig;
 import com.hitorro.jsontypesystem.JsonTypeSystem;

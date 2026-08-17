@@ -239,6 +239,47 @@ public class RetrievalController {
         return ResponseEntity.notFound().build();
     }
 
+    /**
+     * KV prefix scan wire endpoint — the read side of the
+     * {@code RemoteKvStore} → {@code CompositeKvStore} federation
+     * pattern. Streams matching {@code {key, value}} entries as an
+     * NDJson response (one JSON object per line).
+     *
+     * <p>Response entries: {@code {"key":"…", "value":{...}}}. Value is
+     * the JSON already stored in the KV. Key is the raw string key
+     * (UTF-8). Empty stream for empty stores or unmatched prefixes.
+     * 404 when the named store isn't open (or KV is disabled on this
+     * fleet).</p>
+     *
+     * <p>Optional {@code limit} caps the number of entries returned
+     * (default 1000). Prevents a runaway scan across a large partition
+     * from blocking the coordinator.</p>
+     */
+    @GetMapping(value = "/kv/{indexName}/scan", produces = "application/x-ndjson")
+    public ResponseEntity<StreamingResponseBody> scanKv(
+            @PathVariable("indexName") String indexName,
+            @RequestParam(name = "prefix", required = false, defaultValue = "") String prefix,
+            @RequestParam(name = "limit",  required = false, defaultValue = "1000") int limit) {
+        TypedKVStore<JsonNode> store = kv.get(indexName);
+        if (store == null) return ResponseEntity.notFound().build();
+        StreamingResponseBody body = out -> {
+            var writer = new java.io.OutputStreamWriter(out, java.nio.charset.StandardCharsets.UTF_8);
+            int emitted = 0;
+            for (var it = store.scanByPrefixWithKeys(prefix); it.hasNext() && emitted < limit; ) {
+                var e = it.next();
+                if (e == null || e.getValue() == null) continue;
+                var envelope = com.fasterxml.jackson.databind.node.JsonNodeFactory.instance.objectNode();
+                envelope.put("key", e.getKey());
+                envelope.set("value", e.getValue());
+                writer.write(envelope.toString());
+                writer.write('\n');
+                emitted++;
+            }
+            writer.flush();
+        };
+        return ResponseEntity.ok(body);
+    }
+
     /** Report the type-system config resolution so we can spot missing HT_BIN etc. */
     @GetMapping("/env-check")
     public ResponseEntity<Map<String, Object>> envCheck() {
