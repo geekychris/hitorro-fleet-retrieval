@@ -390,12 +390,17 @@ public class RetrievalController {
             @RequestParam(defaultValue = "0") int offset,
             @RequestParam(defaultValue = "20") int limit,
             @RequestParam(defaultValue = "en") String lang,
-            @RequestParam(required = false) String facets) {
+            @RequestParam(required = false) String facets,
+            @RequestParam(required = false) String sort) {
         Map<String, Object> result = new LinkedHashMap<>();
         try {
             List<String> facetDims = (facets != null && !facets.isBlank())
                     ? List.of(facets.split(",")) : null;
-            SearchResult sr = coordinator.executeRaw(index, q, offset, limit, facetDims, lang);
+            // sort param — same compact "field:dir[,field:dir]" shape
+            // RemoteSearchProvider emits, parsed via the shared parser.
+            com.hitorro.retrieval.merger.SortCriteria sortChain =
+                    com.hitorro.retrieval.merger.SortCriteriaParser.parseString(sort);
+            SearchResult sr = coordinator.executeRaw(index, q, offset, limit, facetDims, lang, sortChain);
             result.put("documents", sr.getDocuments().stream().map(JVS::getJsonNode).toList());
             result.put("totalHits", sr.getTotalHits());
             result.put("searchTimeMs", sr.getSearchTimeMs());
@@ -492,42 +497,11 @@ public class RetrievalController {
 
     /**
      * Parse a JSON sort spec into a {@link com.hitorro.retrieval.merger.SortCriteria}
-     * chain. Two shapes accepted:
-     * <ul>
-     *   <li>{@code "sort":"date:desc,_score:desc"} — legacy string</li>
-     *   <li>{@code "sort":[{"field":"date","direction":"desc"},…]} — array of objects</li>
-     * </ul>
-     * Returns null when unset — caller falls back to byScore().
+     * chain. Delegates to
+     * {@link com.hitorro.retrieval.merger.SortCriteriaParser#parse(JsonNode)}
+     * — the same parser {@code IndexRetriever} uses on the pipeline side.
      */
     private static com.hitorro.retrieval.merger.SortCriteria parseSortChain(JsonNode node) {
-        if (node == null || node.isNull()) return null;
-        com.hitorro.retrieval.merger.SortCriteria head = null;
-
-        if (node.isArray()) {
-            for (JsonNode elem : node) {
-                String field = elem.path("field").asText(null);
-                if (field == null || field.isBlank()) continue;
-                com.hitorro.retrieval.merger.SortCriteria.Direction dir =
-                        "asc".equalsIgnoreCase(elem.path("direction").asText("desc"))
-                                ? com.hitorro.retrieval.merger.SortCriteria.Direction.ASC
-                                : com.hitorro.retrieval.merger.SortCriteria.Direction.DESC;
-                head = (head == null)
-                        ? com.hitorro.retrieval.merger.SortCriteria.byField(field, dir)
-                        : head.then(field, dir);
-            }
-        } else if (node.isTextual()) {
-            for (String seg : node.asText().split(",")) {
-                String[] parts = seg.trim().split(":");
-                if (parts.length == 0 || parts[0].isBlank()) continue;
-                com.hitorro.retrieval.merger.SortCriteria.Direction dir =
-                        parts.length > 1 && "asc".equalsIgnoreCase(parts[1])
-                                ? com.hitorro.retrieval.merger.SortCriteria.Direction.ASC
-                                : com.hitorro.retrieval.merger.SortCriteria.Direction.DESC;
-                head = (head == null)
-                        ? com.hitorro.retrieval.merger.SortCriteria.byField(parts[0], dir)
-                        : head.then(parts[0], dir);
-            }
-        }
-        return head;
+        return com.hitorro.retrieval.merger.SortCriteriaParser.parse(node);
     }
 }

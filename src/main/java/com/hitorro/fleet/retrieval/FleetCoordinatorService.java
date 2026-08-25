@@ -161,7 +161,18 @@ public class FleetCoordinatorService {
      */
     public SearchResult executeRaw(String indexName, String query, int offset, int limit,
                                    List<String> facetDims, String lang) throws Exception {
-        return providerFor(indexName).search(indexName, query, offset, limit, facetDims, effectiveLang(lang));
+        return executeRaw(indexName, query, offset, limit, facetDims, lang, null);
+    }
+
+    /** Raw single-index search with an optional caller-requested sort
+     *  chain. Skips the retrieval pipeline (no fixup / summarize etc)
+     *  but still honours sort by handing the chain to the underlying
+     *  provider's sort-aware overload. */
+    public SearchResult executeRaw(String indexName, String query, int offset, int limit,
+                                   List<String> facetDims, String lang,
+                                   com.hitorro.retrieval.merger.SortCriteria sortCriteria) throws Exception {
+        return providerFor(indexName).search(indexName, query, offset, limit, facetDims,
+                                             effectiveLang(lang), sortCriteria);
     }
 
     private SearchProvider providerFor(String indexName) {
@@ -175,6 +186,12 @@ public class FleetCoordinatorService {
                                            List<String> f, String ln) throws Exception {
                     return ro.search(captured, q, o, l, f, ln);
                 }
+                @Override
+                public SearchResult search(String ig, String q, int o, int l,
+                                           List<String> f, String ln,
+                                           com.hitorro.retrieval.merger.SortCriteria sc) throws Exception {
+                    return ro.search(captured, q, o, l, f, ln, sc);
+                }
                 @Override public String getName()      { return "read-only-lucene:" + captured; }
                 @Override public boolean isAvailable() { return true; }
             };
@@ -184,6 +201,12 @@ public class FleetCoordinatorService {
             public SearchResult search(String ig, String q, int o, int l,
                                        List<String> f, String ln) throws Exception {
                 return super.search(captured, q, o, l, f, ln);
+            }
+            @Override
+            public SearchResult search(String ig, String q, int o, int l,
+                                       List<String> f, String ln,
+                                       com.hitorro.retrieval.merger.SortCriteria sc) throws Exception {
+                return super.search(captured, q, o, l, f, ln, sc);
             }
             @Override public String getName() { return "lucene:" + captured; }
         };
