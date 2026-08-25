@@ -18,17 +18,21 @@ import com.hitorro.retrieval.RetrievalResult;
 import com.hitorro.retrieval.RetrievalService;
 import com.hitorro.retrieval.docstore.DocumentStore;
 import com.hitorro.retrieval.docstore.LocalKVDocumentStore;
+import com.hitorro.retrieval.aggregate.MergePolicy;
 import com.hitorro.retrieval.merger.FieldSortMerger;
 import com.hitorro.retrieval.merger.RRFMerger;
 import com.hitorro.retrieval.merger.ResultMerger;
 import com.hitorro.retrieval.merger.ScoreMerger;
+import com.hitorro.retrieval.merger.SortCriteria;
 import com.hitorro.retrieval.search.CompositeSearchProvider;
 import com.hitorro.retrieval.search.LuceneSearchProvider;
 import com.hitorro.retrieval.search.SearchProvider;
 import org.springframework.stereotype.Service;
 
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.List;
+import java.util.Map;
 
 /**
  * Front-door to the full retrieval coordination runtime. Builds a
@@ -87,14 +91,61 @@ public class FleetCoordinatorService {
      */
     public SearchResult searchMultiple(List<String> indexNames, String query, int offset, int limit,
                                        List<String> facets, String lang, String mergerName) throws Exception {
+        return searchMultiple(indexNames, query, offset, limit, facets, lang, mergerName,
+                              /*policies*/ Collections.emptyMap(), /*sortChain*/ null);
+    }
+
+    /**
+     * Full multi-index execute — as above, plus per-aggregate
+     * {@link MergePolicy} overrides + a composite {@link SortCriteria}
+     * chain that drives the merger's k-way select tree.
+     *
+     * <p>Backward-compat: null / empty extras behave exactly like the
+     * three-arg overload (defaults per aggregate, byScore() sort). The
+     * {@code mergerName} arg is respected only when {@code sortChain}
+     * is null — an explicit sort chain always wins over merger-name
+     * selection.</p>
+     */
+    public SearchResult searchMultiple(List<String> indexNames, String query, int offset, int limit,
+                                       List<String> facets, String lang, String mergerName,
+                                       Map<String, MergePolicy> policies,
+                                       SortCriteria sortChain) throws Exception {
         List<SearchProvider> providers = new ArrayList<>();
         for (String name : indexNames) {
             if (!indexes.hasIndex(name)) continue;
             providers.add(providerFor(name));
         }
         if (providers.isEmpty()) throw new IllegalArgumentException("No valid indexes: " + indexNames);
-        CompositeSearchProvider composite = new CompositeSearchProvider(providers, selectMerger(mergerName));
+
+        // Resolve sort: explicit chain > mergerName-derived > default byScore.
+        SortCriteria effectiveSort = sortChain != null ? sortChain : sortFromMergerName(mergerName);
+
+        CompositeSearchProvider composite = new CompositeSearchProvider(providers,
+                effectiveSort,
+                policies != null ? policies : Collections.emptyMap(),
+                /*executor*/ null,   // shared JVM-wide pool
+                /*perBranchTimeoutMs*/ 0);   // use system-property default
         return composite.search("multi", query, offset, limit, facets, effectiveLang(lang));
+    }
+
+    /** Turn the string merger-name into a SortCriteria for the SelectTreeMerger.
+     *  Legacy {@code score}/{@code rrf}/{@code field:name[:desc]} still work. */
+    private SortCriteria sortFromMergerName(String name) {
+        if (name == null || name.isBlank()) return SortCriteria.byScore();
+        String lc = name.toLowerCase();
+        if (lc.startsWith("field:")) {
+            String rest = name.substring("field:".length());
+            String[] parts = rest.split(":");
+            SortCriteria.Direction dir = parts.length > 1 && "desc".equalsIgnoreCase(parts[1])
+                    ? SortCriteria.Direction.DESC : SortCriteria.Direction.ASC;
+            return SortCriteria.byField(parts[0], dir);
+        }
+        // "rrf" doesn't have a direct SortCriteria equivalent — SelectTreeMerger
+        // sorts by whatever we give it. RRF is a per-rank fusion strategy that
+        // belongs in the merger's scoring, not its comparator; for now fall
+        // back to score-descending. When we plumb a per-doc rrf score into
+        // the docs, this can switch.
+        return SortCriteria.byScore();
     }
 
     /**

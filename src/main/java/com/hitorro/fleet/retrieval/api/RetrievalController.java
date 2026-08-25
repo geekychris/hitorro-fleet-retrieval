@@ -191,9 +191,21 @@ public class RetrievalController {
             List<String> facets = null;
             if (body.has("facets") && body.get("facets").isTextual() && !body.get("facets").asText().isBlank()) {
                 facets = List.of(body.get("facets").asText().split(","));
+            } else if (body.has("facets") && body.get("facets").isArray()) {
+                // Fresh local so the lambda's captured ref stays effectively-final.
+                List<String> parsed = new ArrayList<>();
+                body.get("facets").forEach(f -> parsed.add(f.asText()));
+                facets = parsed;
             }
 
-            SearchResult sr = coordinator.searchMultiple(indexNames, q, offset, limit, facets, lang, merger);
+            // Parse the new fields — both optional, backward-compatible.
+            // mergePolicies: {"summary":"SUMMED","facets":"SUMMED","ai_summary":"PER_INDEX"}
+            java.util.Map<String, com.hitorro.retrieval.aggregate.MergePolicy> policies = parseMergePolicies(body.get("mergePolicies"));
+            // sort: [{"field":"date","direction":"desc"},{"field":"_score","direction":"desc"}]
+            com.hitorro.retrieval.merger.SortCriteria sortChain = parseSortChain(body.get("sort"));
+
+            SearchResult sr = coordinator.searchMultiple(indexNames, q, offset, limit, facets, lang, merger,
+                                                          policies, sortChain);
 
             List<JVS> docs = sr.getDocuments();
             result.put("documents", docs.stream().map(JVS::getJsonNode).toList());
@@ -203,6 +215,13 @@ public class RetrievalController {
             result.put("indexNames", indexNames);
             result.put("merger", merger);
             if (sr.hasFacets()) result.put("facets", facetsToMap(sr));
+            // Merged per-source aggregates (summary/facets/ai_summary with
+            // byIndex sub-objects) — surfaces the coordinator's new merger
+            // output. Consumers on older clients ignore extra keys.
+            if (sr.hasSourceAggregates()) {
+                result.put("aggregates", sr.getSourceAggregates().stream()
+                        .map(JVS::getJsonNode).toList());
+            }
             result.put("success", true);
         } catch (Exception e) {
             log.error("search-multiple failed", e);
@@ -452,5 +471,63 @@ public class RetrievalController {
             facetMap.put(dim, Map.of("values", values, "totalCount", fr.getTotalCount()));
         });
         return facetMap;
+    }
+
+    /**
+     * Parse a {@code {"summary":"SUMMED","facets":"SUMMED",…}} object
+     * into a per-aggregate-name {@link com.hitorro.retrieval.aggregate.MergePolicy}
+     * map. Unknown policy strings silently drop (aggregate falls back to
+     * its default). Null / non-object → empty map.
+     */
+    private static Map<String, com.hitorro.retrieval.aggregate.MergePolicy> parseMergePolicies(JsonNode node) {
+        if (node == null || !node.isObject()) return java.util.Collections.emptyMap();
+        Map<String, com.hitorro.retrieval.aggregate.MergePolicy> out = new LinkedHashMap<>();
+        node.fieldNames().forEachRemaining(name -> {
+            String v = node.get(name).asText();
+            try { out.put(name, com.hitorro.retrieval.aggregate.MergePolicy.valueOf(v.toUpperCase())); }
+            catch (IllegalArgumentException ignore) { /* unknown policy — aggregate uses default */ }
+        });
+        return out;
+    }
+
+    /**
+     * Parse a JSON sort spec into a {@link com.hitorro.retrieval.merger.SortCriteria}
+     * chain. Two shapes accepted:
+     * <ul>
+     *   <li>{@code "sort":"date:desc,_score:desc"} — legacy string</li>
+     *   <li>{@code "sort":[{"field":"date","direction":"desc"},…]} — array of objects</li>
+     * </ul>
+     * Returns null when unset — caller falls back to byScore().
+     */
+    private static com.hitorro.retrieval.merger.SortCriteria parseSortChain(JsonNode node) {
+        if (node == null || node.isNull()) return null;
+        com.hitorro.retrieval.merger.SortCriteria head = null;
+
+        if (node.isArray()) {
+            for (JsonNode elem : node) {
+                String field = elem.path("field").asText(null);
+                if (field == null || field.isBlank()) continue;
+                com.hitorro.retrieval.merger.SortCriteria.Direction dir =
+                        "asc".equalsIgnoreCase(elem.path("direction").asText("desc"))
+                                ? com.hitorro.retrieval.merger.SortCriteria.Direction.ASC
+                                : com.hitorro.retrieval.merger.SortCriteria.Direction.DESC;
+                head = (head == null)
+                        ? com.hitorro.retrieval.merger.SortCriteria.byField(field, dir)
+                        : head.then(field, dir);
+            }
+        } else if (node.isTextual()) {
+            for (String seg : node.asText().split(",")) {
+                String[] parts = seg.trim().split(":");
+                if (parts.length == 0 || parts[0].isBlank()) continue;
+                com.hitorro.retrieval.merger.SortCriteria.Direction dir =
+                        parts.length > 1 && "asc".equalsIgnoreCase(parts[1])
+                                ? com.hitorro.retrieval.merger.SortCriteria.Direction.ASC
+                                : com.hitorro.retrieval.merger.SortCriteria.Direction.DESC;
+                head = (head == null)
+                        ? com.hitorro.retrieval.merger.SortCriteria.byField(parts[0], dir)
+                        : head.then(parts[0], dir);
+            }
+        }
+        return head;
     }
 }
