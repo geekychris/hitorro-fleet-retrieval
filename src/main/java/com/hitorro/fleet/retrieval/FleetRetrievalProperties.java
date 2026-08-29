@@ -43,6 +43,29 @@ public class FleetRetrievalProperties {
     /** Enable REST-based ingestion (safe to leave on; ingestion only fires when called). */
     private boolean allowIngest = true;
 
+    /** Ollama binding for the summarize stage + {@code /api/retrieval/summarize}.
+     *  Set {@code enabled=false} to disable AI summarization entirely (the
+     *  SummarizationRetriever no-ops and the /summarize endpoint returns 503). */
+    private Ollama ollama = new Ollama();
+
+    public Ollama getOllama() { return ollama; }
+    public void setOllama(Ollama ollama) { this.ollama = ollama; }
+
+    public static class Ollama {
+        private boolean enabled = true;
+        private String  url = "http://localhost:11434";
+        private String  model = "llama3";
+        private int     timeoutSeconds = 120;
+        public boolean isEnabled() { return enabled; }
+        public void setEnabled(boolean enabled) { this.enabled = enabled; }
+        public String getUrl() { return url; }
+        public void setUrl(String url) { this.url = url; }
+        public String getModel() { return model; }
+        public void setModel(String model) { this.model = model; }
+        public int getTimeoutSeconds() { return timeoutSeconds; }
+        public void setTimeoutSeconds(int timeoutSeconds) { this.timeoutSeconds = timeoutSeconds; }
+    }
+
     private static String defaultPipelinesHome() {
         String prop = System.getProperty("hitorro.pipelines.home");
         if (prop != null) return prop;

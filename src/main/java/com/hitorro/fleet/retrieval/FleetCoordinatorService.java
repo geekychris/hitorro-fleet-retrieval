@@ -12,6 +12,7 @@ import com.hitorro.index.search.SearchResult;
 import com.hitorro.jsontypesystem.JVS;
 import com.hitorro.jsontypesystem.JsonTypeSystem;
 import com.hitorro.jsontypesystem.Type;
+import com.hitorro.jsontypesystem.datamapper.AIOperations;
 import com.hitorro.kvstore.TypedKVStore;
 import com.hitorro.retrieval.RetrievalConfig;
 import com.hitorro.retrieval.RetrievalResult;
@@ -54,13 +55,23 @@ public class FleetCoordinatorService {
     private final FleetIndexService indexes;
     private final FleetKvService kv;
     private final FleetRetrievalProperties props;
+    /** Optional. Present when {@code hitorro.fleet.retrieval.ollama.enabled=true}
+     *  and {@link AiOperationsConfig} contributed an {@link AIOperations} bean.
+     *  When null the summarize stage stays disabled — legacy behavior. */
+    private final AIOperations aiOperations;
 
     public FleetCoordinatorService(FleetIndexService indexes, FleetKvService kv,
-                                   FleetRetrievalProperties props) {
+                                   FleetRetrievalProperties props,
+                                   org.springframework.beans.factory.ObjectProvider<AIOperations> aiProvider) {
         this.indexes = indexes;
         this.kv = kv;
         this.props = props;
+        this.aiOperations = aiProvider.getIfAvailable();
     }
+
+    /** Exposed for direct-text callers (e.g. {@code /api/retrieval/summarize}).
+     *  Returns null when no AIOperations bean is wired. */
+    public AIOperations aiOperations() { return aiOperations; }
 
     /**
      * Single-index execute — full RetrievalService pipeline
@@ -77,6 +88,12 @@ public class FleetCoordinatorService {
         RetrievalService svc = docStore != null
                 ? new RetrievalService(search, docStore)
                 : new RetrievalService(search);
+        // Enable the summarize stage per-request when an AIOperations bean is
+        // wired. Callers opt in via {@code summarize.style} / {@code summarize.prompt}
+        // in the JVS query; requests without a summarize block are unaffected.
+        if (aiOperations != null && aiOperations.isAvailable()) {
+            svc.enableSummarization(aiOperations);
+        }
 
         Type type = resolveType(indexName);
         RetrievalConfig cfg = new RetrievalConfig(indexName,
