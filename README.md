@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="assets/logo.png" alt="Hitorro Fleet Retrieval logo" width="180">
+</p>
+
 # hitorro-fleet-retrieval
 
 Spring Boot fleet member that hosts the full `hitorro-retrieval`
