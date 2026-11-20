@@ -67,7 +67,7 @@ When `enabled=false` or Ollama is unreachable at boot:
 ```bash
 cd hitorro-fleet-retrieval
 mvn clean install -DskipTests
-HT_BIN=~/hitorro java -jar target/hitorro-fleet-retrieval-3.0.1.jar \
+HT_BIN=~/hitorro java -jar target/hitorro-fleet-retrieval-3.0.2.jar \
   --server.port=8095 \
   --hitorro.fleet.retrieval.mode=shared \
   --hitorro.fleet.retrieval.pipelines-home=$HOME/.hitorro/pipelines
