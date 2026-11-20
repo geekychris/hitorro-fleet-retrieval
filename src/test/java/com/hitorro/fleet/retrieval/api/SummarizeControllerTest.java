@@ -3,7 +3,7 @@
  */
 package com.hitorro.fleet.retrieval.api;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
+import tools.jackson.databind.ObjectMapper;
 import com.hitorro.fleet.retrieval.FleetCoordinatorService;
 import com.hitorro.jsontypesystem.datamapper.AIOperations;
 import com.hitorro.retrieval.pipeline.stages.SummaryStyles;
@@ -37,7 +37,7 @@ class SummarizeControllerTest {
     @MockitoBean FleetCoordinatorService coordinator;
     @MockitoBean AIOperations ai;   // matches type of what coordinator.aiOperations() returns
 
-    private final ObjectMapper json = new ObjectMapper();
+    private final ObjectMapper json = com.hitorro.util.json.JsonMappers.json();
 
     @BeforeEach
     void wireDefaultAvailableAi() {

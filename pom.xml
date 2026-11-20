@@ -94,6 +94,15 @@
                 <version>3.30.17</version>
             </dependency>
             <dependency>
+                <groupId>tools.jackson</groupId>
+                <artifactId>jackson-bom</artifactId>
+                <version>3.1.8</version>
+                <type>pom</type>
+                <scope>import</scope>
+            </dependency>
+            <!-- Jackson 2 still arrives through third-party libraries: keep it pinned for
+                 security. HiTorro and the app use only Jackson 3. -->
+            <dependency>
                 <groupId>com.fasterxml.jackson</groupId>
                 <artifactId>jackson-bom</artifactId>
                 <version>2.21.8</version>
@@ -429,7 +438,7 @@
         <dependency>
             <groupId>com.hitorro</groupId>
             <artifactId>hitorro-retrieval</artifactId>
-            <version>3.0.2</version>
+            <version>4.0.0</version>
             <exclusions>
                 <exclusion><groupId>org.slf4j</groupId><artifactId>slf4j-reload4j</artifactId></exclusion>
                 <exclusion><groupId>ch.qos.reload4j</groupId><artifactId>reload4j</artifactId></exclusion>
@@ -471,7 +480,7 @@
         <dependency>
             <groupId>com.hitorro</groupId>
             <artifactId>hitorro-index</artifactId>
-            <version>3.0.2</version>
+            <version>4.0.0</version>
             <exclusions>
                 <exclusion><groupId>org.slf4j</groupId><artifactId>slf4j-reload4j</artifactId></exclusion>
                 <exclusion><groupId>ch.qos.reload4j</groupId><artifactId>reload4j</artifactId></exclusion>
@@ -497,7 +506,7 @@
         <dependency>
             <groupId>com.hitorro</groupId>
             <artifactId>hitorro-kvstore</artifactId>
-            <version>3.0.2</version>
+            <version>4.0.0</version>
             <exclusions>
                 <exclusion><groupId>org.slf4j</groupId><artifactId>slf4j-reload4j</artifactId></exclusion>
                 <exclusion><groupId>ch.qos.reload4j</groupId><artifactId>reload4j</artifactId></exclusion>
@@ -515,7 +524,7 @@
         <dependency>
             <groupId>com.hitorro</groupId>
             <artifactId>hitorro-luceneviewer</artifactId>
-            <version>3.0.2</version>
+            <version>4.0.0</version>
             <exclusions>
                 <exclusion><groupId>org.slf4j</groupId><artifactId>slf4j-reload4j</artifactId></exclusion>
                 <exclusion><groupId>ch.qos.reload4j</groupId><artifactId>reload4j</artifactId></exclusion>
@@ -539,7 +548,7 @@
         <dependency>
             <groupId>com.hitorro</groupId>
             <artifactId>hitorro-jsontypesystem</artifactId>
-            <version>3.0.2</version>
+            <version>4.0.0</version>
             <exclusions>
                 <exclusion><groupId>org.slf4j</groupId><artifactId>slf4j-reload4j</artifactId></exclusion>
                 <exclusion><groupId>ch.qos.reload4j</groupId><artifactId>reload4j</artifactId></exclusion>
@@ -606,14 +615,6 @@
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-webmvc</artifactId>
         </dependency>
-        <!-- Boot 4 defaults to Jackson 3 (tools.jackson). The controllers and the
-             HiTorro libraries use Jackson 2 (com.fasterxml.jackson) JsonNode, so
-             Spring MVC is switched back to Jackson 2 with
-             spring.http.converters.preferred-json-mapper=jackson2. -->
-        <dependency>
-            <groupId>org.springframework.boot</groupId>
-            <artifactId>spring-boot-jackson2</artifactId>
-        </dependency>
         <!-- hitorro-kvstore (RocksDBStore) logs through the log4j 1 API. reload4j is
              excluded above, so route those calls to SLF4J/Logback; without this
              the first KV store open fails with NoClassDefFoundError
@@ -672,6 +673,22 @@
                 <executions>
                     <execution>
                         <goals><goal>repackage</goal></goals>
+                    </execution>
+                </executions>
+            </plugin>
+            <!-- Integration tests (*IT) run after `package` against the repackaged jar. -->
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-failsafe-plugin</artifactId>
+                <version>3.5.2</version>
+                <configuration>
+                    <systemPropertyVariables>
+                        <app.jar>${project.build.directory}/${project.build.finalName}.jar</app.jar>
+                    </systemPropertyVariables>
+                </configuration>
+                <executions>
+                    <execution>
+                        <goals><goal>integration-test</goal><goal>verify</goal></goals>
                     </execution>
                 </executions>
             </plugin>

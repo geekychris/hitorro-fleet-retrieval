@@ -3,15 +3,15 @@
  */
 package com.hitorro.fleet.retrieval;
 
-import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.ObjectMapper;
+import tools.jackson.databind.JsonNode;
+import tools.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
 import org.springframework.context.ApplicationContext;
 import org.springframework.http.MediaType;
-import org.springframework.http.converter.json.MappingJackson2HttpMessageConverter;
+import org.springframework.http.converter.json.JacksonJsonHttpMessageConverter;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
 import org.springframework.test.web.servlet.MockMvc;
@@ -30,9 +30,8 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 
 /**
  * Starts the whole application offline (standalone mode, Lucene and KV under a
- * temporary directory, Ollama disabled) and pins the Spring Boot 4 / Jackson 2
- * setup: a controller returning a Jackson 2 {@code JsonNode} must write it as
- * plain JSON (Jackson 3 would serialize it as a bean).
+ * temporary directory, Ollama disabled) and pins the Spring Boot 4 / Jackson 3
+ * setup: a controller returning a {@code JsonNode} must write it as plain JSON.
  */
 @SpringBootTest(properties = {
         "hitorro.fleet.retrieval.mode=standalone",
@@ -57,7 +56,7 @@ class FleetRetrievalApplicationTest {
         registry.add("hitorro.fleet.retrieval.pipelines-home", () -> TMP.resolve("pipelines").toString());
     }
 
-    private final ObjectMapper json = new ObjectMapper();
+    private final ObjectMapper json = com.hitorro.util.json.JsonMappers.json();
 
     @Autowired MockMvc mvc;
     @Autowired ApplicationContext context;
@@ -73,9 +72,12 @@ class FleetRetrievalApplicationTest {
     }
 
     @Test
-    void springMvcUsesJackson2() {
+    void springMvcUsesJackson3() {
+        // 4.0.0: HiTorro hands out Jackson 3 nodes, so Spring MVC uses Boot's Jackson 3 converter
+        // (configured for Jackson 2's format, see Jackson2CompatConfig); the jackson2 bridge is gone.
         assertThat(context.getBean(RequestMappingHandlerAdapter.class).getMessageConverters())
-                .anyMatch(c -> c instanceof MappingJackson2HttpMessageConverter);
+                .anyMatch(c -> c instanceof JacksonJsonHttpMessageConverter)
+                .noneMatch(c -> c.getClass().getName().contains("Jackson2"));
     }
 
     @Test
@@ -96,5 +98,23 @@ class FleetRetrievalApplicationTest {
 
         assertThat(json.readTree(body)).isEqualTo(stored);
         assertThat(body).doesNotContain("nodeType").doesNotContain("containerNode");
+    }
+
+    /**
+     * The KV scan writes one NDJSON line per entry with the app's mapper, also for a value nested
+     * 600 levels deep (Jackson 2 allowed 1000; Jackson 3's {@code JsonNode.toString()} throws past 500).
+     */
+    @Test
+    void kvScanWritesDeepValues() throws Exception {
+        String deep = "[".repeat(600) + "]".repeat(600);
+        var store = kv.openOrCreate("deeptest");
+        store.put("k1", json.readTree("{\"id\":\"k1\",\"deep\":" + deep + "}"));
+        var started = mvc.perform(get("/api/retrieval/kv/deeptest/scan"))
+                .andExpect(org.springframework.test.web.servlet.result.MockMvcResultMatchers.request().asyncStarted())
+                .andReturn();
+        String body = mvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders.asyncDispatch(started))
+                .andExpect(status().isOk())
+                .andReturn().getResponse().getContentAsString();
+        assertThat(body).isEqualTo("{\"key\":\"k1\",\"value\":{\"id\":\"k1\",\"deep\":" + deep + "}}\n");
     }
 }
