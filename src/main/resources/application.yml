@@ -8,6 +8,15 @@ server:
 spring:
   application:
     name: hitorro-fleet-retrieval
+  # Spring Boot 4 defaults to Jackson 3 (tools.jackson). The controllers and
+  # the HiTorro libraries use Jackson 2 JsonNode, so HTTP stays on Jackson 2.
+  http:
+    converters:
+      preferred-json-mapper: jackson2
+  # spring.jackson2.* configures the Jackson 2 ObjectMapper Spring MVC uses;
+  # spring.jackson.* only reaches the Jackson 3 one.
+  jackson2:
+    default-property-inclusion: non_null
   jackson:
     default-property-inclusion: non_null
 

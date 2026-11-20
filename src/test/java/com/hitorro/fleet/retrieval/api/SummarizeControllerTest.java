@@ -11,9 +11,9 @@ import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest;
-import org.springframework.boot.test.mock.mockito.MockBean;
+import org.springframework.boot.webmvc.test.autoconfigure.WebMvcTest;
 import org.springframework.http.MediaType;
+import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
 
 import java.util.Map;
@@ -34,8 +34,8 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 class SummarizeControllerTest {
 
     @Autowired MockMvc mvc;
-    @MockBean FleetCoordinatorService coordinator;
-    @MockBean AIOperations ai;   // matches type of what coordinator.aiOperations() returns
+    @MockitoBean FleetCoordinatorService coordinator;
+    @MockitoBean AIOperations ai;   // matches type of what coordinator.aiOperations() returns
 
     private final ObjectMapper json = new ObjectMapper();
 
