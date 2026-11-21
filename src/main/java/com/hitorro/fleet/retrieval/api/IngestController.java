@@ -3,7 +3,7 @@
  */
 package com.hitorro.fleet.retrieval.api;
 
-import com.fasterxml.jackson.databind.JsonNode;
+import tools.jackson.databind.JsonNode;
 import com.hitorro.fleet.retrieval.FleetIndexService;
 import com.hitorro.fleet.retrieval.FleetKvService;
 import com.hitorro.fleet.retrieval.FleetRetrievalProperties;
@@ -23,6 +23,7 @@ import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import com.hitorro.util.json.JsonValues;
 
 /**
  * Standalone-mode ingest — create indexes and push documents in via REST.
@@ -151,11 +152,11 @@ public class IngestController {
         if (idNode.isObject()) {
             JsonNode domain = idNode.get("domain");
             JsonNode did = idNode.get("did");
-            if (domain != null && did != null) return domain.asText() + "/" + did.asText();
-            if (did != null) return did.asText();
+            if (domain != null && did != null) return JsonValues.asText(domain) + "/" + JsonValues.asText(did);
+            if (did != null) return JsonValues.asText(did);
             return null;
         }
-        String text = idNode.asText();
+        String text = JsonValues.asText(idNode);
         return (text == null || text.isEmpty()) ? null : text;
     }
 }

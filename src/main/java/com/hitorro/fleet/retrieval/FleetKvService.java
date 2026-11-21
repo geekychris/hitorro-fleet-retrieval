@@ -5,7 +5,7 @@ package com.hitorro.fleet.retrieval;
 
 import com.hitorro.kvstore.readonly.ReadOnlyKvStore;
 
-import com.fasterxml.jackson.databind.JsonNode;
+import tools.jackson.databind.JsonNode;
 import com.hitorro.kvstore.DatabaseConfig;
 import com.hitorro.kvstore.RocksDBStore;
 import com.hitorro.kvstore.TypedKVStore;

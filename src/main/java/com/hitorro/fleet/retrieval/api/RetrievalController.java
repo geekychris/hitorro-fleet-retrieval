@@ -3,9 +3,9 @@
  */
 package com.hitorro.fleet.retrieval.api;
 
-import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.ObjectMapper;
-import com.fasterxml.jackson.databind.node.JsonNodeFactory;
+import tools.jackson.databind.JsonNode;
+import tools.jackson.databind.ObjectMapper;
+import tools.jackson.databind.node.JsonNodeFactory;
 import com.hitorro.fleet.retrieval.FleetCoordinatorService;
 import com.hitorro.fleet.retrieval.FleetIndexService;
 import com.hitorro.fleet.retrieval.FleetKvService;
@@ -35,6 +35,7 @@ import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import com.hitorro.util.json.JsonValues;
 
 /**
  * REST surface for the fleet-retrieval coordination runtime.
@@ -49,7 +50,7 @@ import java.util.Map;
 public class RetrievalController {
 
     private static final Logger log = LoggerFactory.getLogger(RetrievalController.class);
-    private static final ObjectMapper JSON = new ObjectMapper();
+    private static final ObjectMapper JSON = com.hitorro.util.json.JsonMappers.json();
 
     private final FleetCoordinatorService coordinator;
     private final FleetIndexService indexes;
@@ -108,7 +109,7 @@ public class RetrievalController {
             String indexName = requireString(body, "indexName");
             JsonNode queryNode = body.has("query") ? body.get("query")
                     : JsonNodeFactory.instance.objectNode();
-            String lang = body.has("lang") ? body.get("lang").asText() : null;
+            String lang = body.has("lang") ? JsonValues.asText(body.get("lang")) : null;
 
             RetrievalResult rr = coordinator.execute(indexName, new JVS(queryNode), lang);
             populate(result, rr, queryNode);
@@ -136,7 +137,7 @@ public class RetrievalController {
                 String indexName = requireString(body, "indexName");
                 JsonNode queryNode = body.has("query") ? body.get("query")
                         : JsonNodeFactory.instance.objectNode();
-                String lang = body.has("lang") ? body.get("lang").asText() : null;
+                String lang = body.has("lang") ? JsonValues.asText(body.get("lang")) : null;
 
                 RetrievalResult rr = coordinator.execute(indexName, new JVS(queryNode), lang);
                 var writer = new OutputStreamWriter(out, StandardCharsets.UTF_8);
@@ -176,25 +177,25 @@ public class RetrievalController {
         try {
             List<String> indexNames = new ArrayList<>();
             if (body.has("indexNames") && body.get("indexNames").isArray()) {
-                body.get("indexNames").forEach(n -> indexNames.add(n.asText()));
+                body.get("indexNames").forEach(n -> indexNames.add(JsonValues.asText(n)));
             }
             if (indexNames.isEmpty()) {
                 result.put("success", false);
                 result.put("error", "indexNames required (array)");
                 return ResponseEntity.badRequest().body(result);
             }
-            String q = body.has("query") ? body.get("query").asText() : "*:*";
-            int offset = body.has("offset") ? body.get("offset").asInt() : 0;
-            int limit = body.has("limit") ? body.get("limit").asInt() : 20;
-            String lang = body.has("lang") ? body.get("lang").asText() : null;
-            String merger = body.has("merger") ? body.get("merger").asText() : "score";
+            String q = body.has("query") ? JsonValues.asText(body.get("query")) : "*:*";
+            int offset = body.has("offset") ? JsonValues.asInt(body.get("offset")) : 0;
+            int limit = body.has("limit") ? JsonValues.asInt(body.get("limit")) : 20;
+            String lang = body.has("lang") ? JsonValues.asText(body.get("lang")) : null;
+            String merger = body.has("merger") ? JsonValues.asText(body.get("merger")) : "score";
             List<String> facets = null;
-            if (body.has("facets") && body.get("facets").isTextual() && !body.get("facets").asText().isBlank()) {
-                facets = List.of(body.get("facets").asText().split(","));
+            if (body.has("facets") && body.get("facets").isString() && !JsonValues.asText(body.get("facets")).isBlank()) {
+                facets = List.of(JsonValues.asText(body.get("facets")).split(","));
             } else if (body.has("facets") && body.get("facets").isArray()) {
                 // Fresh local so the lambda's captured ref stays effectively-final.
                 List<String> parsed = new ArrayList<>();
-                body.get("facets").forEach(f -> parsed.add(f.asText()));
+                body.get("facets").forEach(f -> parsed.add(JsonValues.asText(f)));
                 facets = parsed;
             }
 
@@ -287,10 +288,11 @@ public class RetrievalController {
             for (var it = store.scanByPrefixWithKeys(prefix); it.hasNext() && emitted < limit; ) {
                 var e = it.next();
                 if (e == null || e.getValue() == null) continue;
-                var envelope = com.fasterxml.jackson.databind.node.JsonNodeFactory.instance.objectNode();
+                var envelope = tools.jackson.databind.node.JsonNodeFactory.instance.objectNode();
                 envelope.put("key", e.getKey());
                 envelope.set("value", e.getValue());
-                writer.write(envelope.toString());
+                // JSON, not envelope.toString(): on Jackson 3 that throws past 500 nesting levels
+                writer.write(JSON.writeValueAsString(envelope));
                 writer.write('\n');
                 emitted++;
             }
@@ -413,10 +415,10 @@ public class RetrievalController {
     // ─── Helpers ────────────────────────────────────────────────────
 
     private static String requireString(JsonNode body, String field) {
-        if (body == null || !body.has(field) || body.get(field).asText().isBlank()) {
+        if (body == null || !body.has(field) || JsonValues.asText(body.get(field)).isBlank()) {
             throw new IllegalArgumentException(field + " is required");
         }
-        return body.get(field).asText();
+        return JsonValues.asText(body.get(field));
     }
 
     private static void populate(Map<String, Object> result, RetrievalResult rr, JsonNode queryNode) {
@@ -487,8 +489,8 @@ public class RetrievalController {
     private static Map<String, com.hitorro.retrieval.aggregate.MergePolicy> parseMergePolicies(JsonNode node) {
         if (node == null || !node.isObject()) return java.util.Collections.emptyMap();
         Map<String, com.hitorro.retrieval.aggregate.MergePolicy> out = new LinkedHashMap<>();
-        node.fieldNames().forEachRemaining(name -> {
-            String v = node.get(name).asText();
+        node.propertyNames().iterator().forEachRemaining(name -> {
+            String v = JsonValues.asText(node.get(name));
             try { out.put(name, com.hitorro.retrieval.aggregate.MergePolicy.valueOf(v.toUpperCase())); }
             catch (IllegalArgumentException ignore) { /* unknown policy — aggregate uses default */ }
         });

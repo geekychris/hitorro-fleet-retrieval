@@ -3,7 +3,7 @@
  */
 package com.hitorro.fleet.retrieval.api;
 
-import com.fasterxml.jackson.databind.JsonNode;
+import tools.jackson.databind.JsonNode;
 import com.hitorro.fleet.retrieval.FleetCoordinatorService;
 import com.hitorro.jsontypesystem.datamapper.AIOperations;
 import com.hitorro.retrieval.pipeline.stages.SummaryStyles;
@@ -20,6 +20,7 @@ import org.springframework.web.bind.annotation.RestController;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import com.hitorro.util.json.JsonValues;
 
 /**
  * Direct-text summarization surface. Bypasses the retrieval pipeline —
@@ -82,14 +83,14 @@ public class SummarizeController {
                             "hitorro.fleet.retrieval.ollama.enabled and that Ollama is reachable"));
         }
 
-        String text = body.path("text").asText("");
+        String text = JsonValues.asText(body.path("text"), "");
         if (text.isBlank()) {
             return ResponseEntity.badRequest()
                     .body(Map.of("error", "text is required"));
         }
-        String style = body.path("style").asText("").trim();
-        String promptOverride = body.hasNonNull("prompt") ? body.get("prompt").asText() : null;
-        int maxWords = body.path("maxWords").asInt(DEFAULT_MAX_WORDS);
+        String style = JsonValues.asText(body.path("style"), "").trim();
+        String promptOverride = body.hasNonNull("prompt") ? JsonValues.asText(body.get("prompt")) : null;
+        int maxWords = JsonValues.asInt(body.path("maxWords"), DEFAULT_MAX_WORDS);
 
         // Resolve prompt: explicit `prompt` wins; else look up `style`; else fall
         // back to the legacy summarize(text, maxWords) shortcut.
