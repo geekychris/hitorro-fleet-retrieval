@@ -33,7 +33,7 @@ import tools.jackson.databind.cfg.DateTimeFeature;
  * Jackson 3 one is a plain {@code JsonMapper.builder()}, which sorts properties alphabetically
  * ({@code /actuator/health} became {@code {"groups":..,"status":"UP"}}). application.yml turns that
  * one off ({@code management.endpoints.jackson.isolated-json-mapper: false}) and
- * {@link #endpointJsonMapper()} provides the Jackson 2 equivalent.
+ * {@link #hitorroEndpointJsonMapper()} provides the Jackson 2 equivalent.
  */
 @Configuration(proxyBeanMethods = false)
 public class Jackson2CompatConfig {
@@ -48,8 +48,15 @@ public class Jackson2CompatConfig {
         return builder -> builder.addModule(new Jackson2JdkModule());
     }
 
+    /**
+     * Actuator's JSON mapper. Named apart from Boot's own {@code endpointJsonMapper} and {@code @Primary}, so
+     * the two can never clash: Boot creates its isolated mapper whenever
+     * {@code management.endpoints.jackson.isolated-json-mapper} isn't false (for example when a deployment
+     * replaces application.yml with {@code --spring.config.location}), and actuator then still uses this one.
+     */
     @Bean
-    EndpointJsonMapper endpointJsonMapper() {
+    @org.springframework.context.annotation.Primary
+    EndpointJsonMapper hitorroEndpointJsonMapper() {
         var mapper = JsonMappers.builder()           // Jackson 2 defaults, factory features and 2.18 limits
                 .disable(DateTimeFeature.WRITE_DATES_AS_TIMESTAMPS)
                 .disable(DateTimeFeature.WRITE_DURATIONS_AS_TIMESTAMPS)
