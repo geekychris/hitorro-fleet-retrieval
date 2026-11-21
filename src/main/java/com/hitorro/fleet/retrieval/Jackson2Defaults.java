@@ -26,7 +26,7 @@ import java.util.Map;
  * to a {@code JsonMapper} with Jackson 3's defaults and none of the settings above. It is mapped to
  * {@code jackson}, with a warning.
  */
-public class Jackson2DefaultsEnvironmentPostProcessor implements EnvironmentPostProcessor, Ordered {
+public class Jackson2Defaults implements EnvironmentPostProcessor, Ordered {
 
     static final String SOURCE_NAME = "hitorroJackson2Defaults";
     static final String OVERRIDE_NAME = "hitorroJackson2Overrides";
@@ -34,8 +34,8 @@ public class Jackson2DefaultsEnvironmentPostProcessor implements EnvironmentPost
 
     private final Log log;
 
-    public Jackson2DefaultsEnvironmentPostProcessor(DeferredLogFactory logs) {
-        this.log = logs.getLog(Jackson2DefaultsEnvironmentPostProcessor.class);
+    public Jackson2Defaults(DeferredLogFactory logs) {
+        this.log = logs.getLog(Jackson2Defaults.class);
     }
 
     static final Map<String, Object> DEFAULTS = Map.ofEntries(
