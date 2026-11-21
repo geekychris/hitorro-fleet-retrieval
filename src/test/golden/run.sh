@@ -15,4 +15,12 @@ here=$(cd "$(dirname "$0")" && pwd)
 work=$(mktemp -d)
 python3 "$here/app_golden.py" --cp "$1" --main-class com.hitorro.fleet.retrieval.FleetRetrievalApplication \
   --requests "$here/requests.py" --out "$work/new.jsonl" --work "$work/w" --env 'HT_BIN=<WORK>/bin'
-python3 "$here/golden_compare.py" "$(ls "$here"/main/main-*.jsonl.gz | paste -sd, -)" "$work/new.jsonl"
+if [ "${GOLDEN_DEPLOYED:-}" = 1 ]; then
+  # As the hitorro-mesh Helm chart starts it (--spring.config.location replaces application.yml), vs main
+  # recorded the same way. Accepted (accepted-deployed.jsonl.gz): main lost application.yml's
+  # default-property-inclusion: non_null there and wrote null fields; 4.0.0 keeps non_null in every setup.
+  python3 "$here/golden_compare.py" "$(ls "$here"/main-deployed/main-*.jsonl.gz | paste -sd, -)" "$work/new.jsonl" \
+    --order-from="$(ls "$here"/main/main-*.jsonl.gz | paste -sd, -)" --accepted="$here/accepted-deployed.jsonl.gz"
+else
+  python3 "$here/golden_compare.py" "$(ls "$here"/main/main-*.jsonl.gz | paste -sd, -)" "$work/new.jsonl"
+fi

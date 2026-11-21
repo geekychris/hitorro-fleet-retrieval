@@ -31,6 +31,17 @@ def http(method, url, body=None, ctype='application/json', timeout=60, accept=No
     except Exception as e:
         return -1, '', 'EXC ' + type(e).__name__ + ' ' + str(e)
 
+# GOLDEN_DEPLOYED=1: start the apps as the hitorro-mesh Helm chart and cloud-stack's deploy/mesh overlay
+# do: --spring.config.location (which replaces the packaged application.yml) plus the overlay's env.
+DEPLOYED = os.environ.get('GOLDEN_DEPLOYED') == '1'
+DEPLOYED_ENV = {'SPRING_HTTP_CONVERTERS_PREFERREDJSONMAPPER': 'jackson2',
+                'MANAGEMENT_ENDPOINTS_WEB_EXPOSURE_INCLUDE': 'health,info,metrics,prometheus'}
+def deployed_args(work, name):
+    if not DEPLOYED: return []
+    f = os.path.join(work, name + '-deployed.yml')
+    with open(f, 'w') as fh: fh.write('spring:\n  main:\n    banner-mode: off\n')
+    return ['--spring.config.location=file:' + f]
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument('--cp', required=True); ap.add_argument('--main-class', required=True)
@@ -46,7 +57,8 @@ def main():
     jvm = ['java', '-Xmx1g', '-Duser.home=' + os.path.join(work, 'home')]
     cmd = jvm + (['-jar', a.cp] if (a.cp.endswith('.jar') and os.pathsep not in a.cp) else ['-cp', a.cp, a.main_class])
     cmd += [f'--server.port={port}'] + spec['ARGS'](work)
-    env = dict(os.environ)
+    cmd += deployed_args(work, 'app')
+    env = dict(os.environ, **(DEPLOYED_ENV if DEPLOYED else {}))
     for e in a.env: k, v = e.split('=', 1); env[k] = v.replace('<WORK>', work)
     if 'setup' in spec: spec['setup'](work)
     p = subprocess.Popen(cmd, stdout=open(os.path.join(work, 'app.log'), 'w'), stderr=subprocess.STDOUT, cwd=work, env=env)
