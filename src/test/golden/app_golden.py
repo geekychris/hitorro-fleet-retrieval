@@ -5,7 +5,13 @@
 [app args]), writes one JSON record per request.
 METHOD: GET/POST/PUT/DELETE (JSON body), POSTTEXT/PUTTEXT, NDJSON (POST, read the whole stream),
 GETNDJSON, SLEEP (path = seconds), FILE (path = file to record)."""
-import argparse, json, os, runpy, shutil, socket, subprocess, sys, tempfile, time, urllib.request, urllib.error
+import argparse, re, json, os, runpy, shutil, socket, subprocess, sys, tempfile, time, urllib.request, urllib.error
+
+def repl(text, k, v):
+    """Masks a run value: the work dir anywhere, a port only as ':<port>' (not inside other numbers)."""
+    if k.isdigit():
+        return re.sub(r'(?<=:)' + k + r'(?!\d)', v, text)
+    return text.replace(k, v)
 
 def free_port():
     s = socket.socket(); s.bind(('127.0.0.1', 0)); p = s.getsockname()[1]; s.close(); return p
@@ -73,8 +79,8 @@ def main():
             rb = body if isinstance(body, (str, type(None))) else json.dumps(body, ensure_ascii=False)
             rq = f'{m} {path}'
             for k, v in subst.items():
-                b = b.replace(k, v); rq = rq.replace(k, v)
-                if rb is not None: rb = rb.replace(k, v)
+                b = repl(b, k, v); rq = repl(rq, k, v)
+                if rb is not None: rb = repl(rb, k, v)
             records.append({"i": i, "req": rq, "body": rb, "status": st, "ctype": ct, "resp": b})
         with open(a.out, 'w') as fh:
             for r in records: fh.write(json.dumps(r, ensure_ascii=False) + '\n')
